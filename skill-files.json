@@ -1,6 +1,6 @@
 {
   "LICENSE": "f3b18a52d2669b9a25e2bfeb5181cb26c988c7b7c01addbcaeb319a22105adab",
-  "SECURITY.md": "c3a65d9103ffed5d4199865d7f22345cbb74d69a888b8b2fbb8613d2a6366327",
+  "SECURITY.md": "1b855eefda2a7dc1058beef1fba66f4567f5223d589e278f9fac8dbe13d44c22",
   "SKILL.md": "7a11f03914a5c7160a4921008d3c3446866e9a43b5d0136c3267a1fc911ca6d5",
   "agents/openai.yaml": "975e96326076ecff1b0461fb97a1ea1b2a3100e1a878e7d41d805cabd68da876",
   "references/author.md": "2a5f4c61e2f1e28ba697696bdd1b3720cb98deb0a8dd8648ee00c61bfbe20d2b",
@@ -11,6 +11,6 @@
   "references/review.md": "517177b9a486cfb1e30d090d2b2df50f1df7101ca46de5ad692bf5cddb4504fa",
   "references/workflow.md": "965f5b659e4a831fedfc34558c26f31f31d69544cdab7ee6bce63d9f4f481d14",
   "scripts/domain_store.py": "5929b212cbd22ed7a1265fdf989f11de8d300c2209772e45caa1719dd23e5f35",
-  "scripts/subtitles.py": "f88755aa80fda14156948db2203d45a03c18cadee9869b26b40576cf2134a3d6",
+  "scripts/subtitles.py": "71d2b0d14fdbbcc966a82b78151047298d200591fc96942c1ecc3662a3ae510a",
   "scripts/telemetry.py": "ba7dcdbe8b107d2b5ba0ac524398b01fcf0f6917f5dd0d288c4d1cf8ccf27de2"
 }

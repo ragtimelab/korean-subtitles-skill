@@ -547,7 +547,7 @@ def prepare_one(media, work, target=None, shared=None, base=None, scope=None,
                                  'provenance': {'kind': 'deployed_baseline', 'authorization': record['authorization']},
                                  'presentation_evidence': {'checked': 'Exact baseline snapshot; inspect scoped text before learning.',
                                      'preserved': 'Output preserves bytes outside approved text changes.', 'limitations': [], 'resolved': True}}
-    require(output != work and work not in output.parents, 'Output cannot be inside work storage')
+    require(output != work, 'Output cannot be the work directory')
     private_mkdir(work)
     root = Path(shared).resolve().parent if shared else work
     with transaction(root, create=True):
