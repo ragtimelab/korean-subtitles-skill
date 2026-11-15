@@ -1,4 +1,4 @@
-"""Read-only Codex usage attribution; never opens a subtitle project."""
+"""Optional read-only usage analysis of Codex-native logs; never required for other hosts."""
 
 from collections import Counter
 from contextlib import contextmanager

@@ -1,0 +1,13 @@
+# Product-neutral automatic execution
+
+The skill is an Agent Skills package, not a vendor-specific client. Any host may load SKILL.md and its applicable references. Installation does not establish execution capability. Optional agents/openai.yaml is UI metadata only.
+
+Before acquisition or worker dispatch, establish the host's available file read/write and local command execution tools, access to the requested source material, and a way to start or connect actual independent workers and receive results. Use existing host tools; do not build a provider SDK, request new API keys, install agent runtimes or change models/effort. Product names and native subagent APIs are not requirements. A connected independent agent is as valid as a native child agent. Distinct workers can run sequentially when concurrent slots are unavailable.
+
+If a required capability is absent, state exactly what is unavailable and which read-only assessment is feasible. Do not turn missing tools into a vendor rejection, silently degrade fidelity, ask the user to execute/copy packets as the normal path, or place unreviewed output. With no independent worker, correction cannot become independent approval. Preserve pending work without inventing a reviewer identity.
+
+Use the actual stable host worker/session identity when available. Otherwise the coordinator generates an opaque identifier once, binds it to the real worker execution and passes it unchanged. The identifier tracks ownership, not authentication or cognition. A new label for the same context is not a new worker. Each worker may handle two distinct episodes, then requires a fresh context; a first corrector never reviews their own episode. No parent-history copying or author verdict in review context.
+
+The coordinator completes collection and shared factual study. Workers consume generated handoff packets, submit language judgments, explicitly seal/approve and use submit --next. Route readiness and completion over the host's available task-result channel. Resume waiting workers on real readiness, not repeated chat polling. Only the coordinator finalizes after current independent approval. Source priority, complete E/K/O/S reading and exact-byte guards are unchanged.
+
+Usage analysis is optional. scripts/telemetry.py currently recognizes Codex-native records only; other hosts do not need those logs. Use actual host measurements when available and distinguish their scope. Unsupported logs yield not_measured, never inferred zero tokens. Do not fabricate counters or require telemetry to process subtitles. Raw logs are private and are read only when explicitly supplied.
