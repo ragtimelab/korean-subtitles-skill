@@ -267,22 +267,68 @@ def check_directory(binding):
     require([info.st_dev, info.st_ino] == binding['identity'], 'Write directory changed')
 
 
-def protected_paths(s):
+def protected_resources(s):
     work = Path(s['work'])
     root = store_root(work / 'state.json')
-    paths = {s['media'], str(database(root)), str(root / '.lock'),
-             s['context_path'], str(work / 'item.json'), str(work / 'base.srt')}
+    paths = [(p, 'protected') for p in (s['media'], str(database(root)), str(root / '.lock'),
+             s['context_path'], str(work / 'item.json'), str(work / 'base.srt'))]
     for source in s['sources'].values():
-        paths.update(source.get(key) for key in ('path', 'original_path'))
+        paths.extend((source.get(key), 'protected') for key in ('path', 'original_path'))
         # Bounded patches explicitly authorize replacing their deployed baseline;
         # the preserved baseline snapshot remains protected.
         origin = source.get('origin_path')
         baseline_target = (s.get('patch') and source.get('origin') == 'baseline' and
                            origin and Path(origin).resolve() == Path(s['target']).resolve())
-        if origin and not baseline_target:
-            paths.add(origin)
-    paths.update(e.get('path') for e in context(s)['evidence'].values())
-    return {Path(p).resolve() for p in paths if p}
+        if origin:
+            paths.append((origin, 'baseline' if baseline_target else 'protected'))
+    paths.extend((e.get('path'), 'protected') for e in context(s)['evidence'].values())
+    return [(Path(p), role) for p, role in paths if p]
+
+
+def protected_paths(s):
+    return {p.resolve() for p, role in protected_resources(s) if role != 'baseline'}
+
+
+def batch_destination_guard(items, excluded=()):
+    resources = [(p, s['work'], role) for s in items for p, role in
+                 [*protected_resources(s), (Path(s['target']), 'output')]]
+    for row in excluded:
+        if row.get('media'):
+            media = Path(row['media'])
+            resources.extend((p, None, 'protected') for p in (media, media.with_suffix('.ko.srt')))
+
+    def index():
+        paths, inodes = {}, {}
+        for path, owner, role in resources:
+            key = path.resolve()
+            entry = (owner, role, key)
+            paths.setdefault(key, []).append(entry)
+            try:
+                info = path.stat()
+            except FileNotFoundError:
+                continue
+            inodes.setdefault((info.st_dev, info.st_ino), []).append(entry)
+        return paths, inodes
+
+    def check(s, current=None):
+        paths, inodes = index() if current is None else current
+        target = Path(s['target']).absolute()
+        require(not target.is_symlink() and target.resolve() == target, 'Write directory changed')
+        entries = list(paths.get(target, ()))
+        try:
+            info = target.stat()
+        except FileNotFoundError:
+            pass
+        else:
+            entries.extend(inodes.get((info.st_dev, info.st_ino), ()))
+        for owner, role, path in entries:
+            require(owner == s['work'] and path == target and role in {'output', 'baseline'},
+                    'Batch destination aliases a protected file or another output')
+
+    current = index()
+    for s in items:
+        check(s, current)
+    return check
 
 
 def check_destination(path, protected):
@@ -764,6 +810,271 @@ def compact(ids):
 def source_map(s):
     return {c['id']: c for v in s['sources'].values() for c in v['cues']}
 
+def markup_spans(text):
+    """Broad presentation spans; failed delimiter searches happen at most once."""
+    disabled = set()
+    cursor = 0
+    while cursor < len(text):
+        char = text[cursor]
+        if char in '<{' and char not in disabled:
+            end = text.find('>' if char == '<' else '}', cursor + 1)
+            if end >= 0:
+                yield cursor, end + 1
+                cursor = end + 1
+                continue
+            disabled.add(char)
+        cursor += 1
+
+
+def visible_text(text):
+    pieces, cursor = [], 0
+    for start, end in markup_spans(text):
+        pieces.append(text[cursor:start])
+        cursor = end
+    pieces.append(text[cursor:])
+    return ''.join(pieces)
+
+
+def named_tags(text):
+    """The validator's named-tag grammar is independent of broad markup spans."""
+    cursor, close_at = 0, -1
+    while True:
+        start = text.find('<', cursor)
+        if start < 0:
+            return
+        name_start = start + 1
+        closing = text[name_start:name_start + 1] == '/'
+        name_start += closing
+        end = name_start
+        while end < len(text) and ('a' <= text[end] <= 'z' or 'A' <= text[end] <= 'Z'):
+            end += 1
+        if end > name_start and end < len(text):
+            if text[end] == '>':
+                finish = end
+            elif text[end].isspace():
+                if close_at < end:
+                    close_at = text.find('>', end + 1)
+                if close_at < 0:
+                    return
+                finish = close_at
+            else:
+                cursor = end
+                continue
+            yield closing, text[name_start:end]
+            cursor = finish + 1
+        else:
+            cursor = max(start + 1, end)
+
+
+def empty_markup(text):
+    """Reduce empty lowercase tag pairs with reversible scanner state and spans.
+
+    Rollback matters for tag-like text inside attributes: removing an inner pair
+    can finish an earlier opener. Each retained span is appended/removed once.
+    """
+    names = ('i', 'b', 'u', 'font')
+    terminals = {f'<{name}>': (False, name) for name in names}
+    terminals.update({f'</{name}>': (True, name) for name in names})
+    prefixes = {word[:n] for word in terminals for n in range(1, len(word))}
+    starts = {f'<{name}': name for name in names}
+    segments, length = [], 0
+    attributes, partial, eligible = {}, None, None
+    for index, char in enumerate(text):
+        before = attributes, partial, eligible
+        if segments and segments[-1][1] == index:
+            segments[-1][1] += 1
+        else:
+            segments.append([index, index + 1, length])
+        length += 1
+        if not char.isspace():
+            eligible = None
+        direct = None
+        if char == '<':
+            partial = ('<', length - 1, before)
+        elif partial is not None:
+            prefix, start, saved = partial
+            word = prefix + char
+            if prefix in starts and char.isspace():
+                name = starts[prefix]
+                if name not in attributes:
+                    attributes = {**attributes, name: (start, saved)}
+                partial = None
+            elif word in terminals:
+                closing, name = terminals[word]
+                partial = None
+                if closing and saved[2] and name in saved[2]:
+                    cut, restored = saved[2][name]
+                    if restored[0] or restored[1] is not None:
+                        # Deletion can form a tag across an attribute/name prefix.
+                        # Preserve simultaneous global-pass ordering in that case.
+                        return empty_markup_rounds(text)
+                    while segments and segments[-1][2] >= cut:
+                        segments.pop()
+                    if segments:
+                        segments[-1][1] = segments[-1][0] + cut - segments[-1][2]
+                    length = cut
+                    attributes, partial, eligible = restored
+                    continue
+                if not closing:
+                    direct = name, (start, saved)
+            elif word in prefixes:
+                partial = word, start, saved
+            else:
+                partial = None
+        if char == '>':
+            group = attributes
+            if direct is not None and direct[0] not in group:
+                group = {**group, direct[0]: direct[1]}
+            attributes = {}
+            eligible = group or None
+    return ''.join(text[start:end] for start, end, _ in segments).strip()
+
+
+def empty_markup_rounds(text):
+    """Exact global replacement rounds on a deletion-only blocked sequence tree.
+
+    Each node summarizes a fixed anchored tag automaton: transitions from every
+    state, earliest unfinished starts, and the first complete match. Deleted
+    subtrees become the identity summary. No unchanged text is rescanned on each
+    nesting round; boundary updates cost O(log n) fixed-size summary merges.
+    """
+    alphabet = '<>/ibufont'
+    whitespace, other = len(alphabet), len(alphabet) + 1
+    width = len(alphabet) + 2
+    table = []
+    def state():
+        table.append([-1] * width)
+        return len(table) - 1
+    def link(source, char, target):
+        table[source][alphabet.index(char)] = target
+    initial, branch = state(), state()
+    link(initial, '<', branch)
+    for name in ('i', 'b', 'u', 'font'):
+        current = branch
+        for char in name:
+            following = state()
+            link(current, char, following)
+            current = following
+        attribute, after = state(), state()
+        link(current, '>', after)
+        table[current][whitespace] = attribute
+        table[attribute] = [attribute] * width
+        link(attribute, '>', after)
+        table[after][whitespace] = after
+        for char in '</' + name:
+            following = state()
+            link(after, char, following)
+            after = following
+        link(after, '>', -2)
+    count = len(table)
+    identity = (tuple((q, None) for q in range(count)), {}, None)
+    def first(a, b):
+        return b if a is None else a if b is None else min(a, b)
+    def merge(left, right):
+        if left is identity:
+            return right
+        if right is identity:
+            return left
+        lt, lp, best = left
+        rt, rp, rb = right
+        transitions = tuple(rt[q] if q >= 0 else (q, end) for q, end in lt)
+        pending = dict(rp)
+        best = first(best, rb)
+        for q, start in lp.items():
+            following, end = rt[q]
+            if following == -2:
+                best = first(best, (start, end))
+            elif following >= 0:
+                pending[following] = min(start, pending.get(following, start))
+        return transitions, pending, best
+    def summarize(ranges):
+        transitions = [(q, None) for q in range(count)]
+        pending, best = {}, None
+        for lo, hi in ranges:
+            for position in range(lo, hi):
+                char = text[position]
+                category = alphabet.find(char)
+                if category < 0:
+                    category = whitespace if char.isspace() else other
+                for q, (current, end) in enumerate(transitions):
+                    if current >= 0:
+                        following = table[current][category]
+                        transitions[q] = (following, position + 1 if following == -2 else None)
+                following_pending = {}
+                for current, start in pending.items():
+                    following = table[current][category]
+                    if following == -2:
+                        best = first(best, (start, position + 1))
+                    elif following >= 0:
+                        following_pending[following] = min(start, following_pending.get(following, start))
+                if char == '<':
+                    following_pending[branch] = min(position, following_pending.get(branch, position))
+                pending = following_pending
+        return tuple(transitions), pending, best
+    class Node:
+        def __init__(self, lo, hi):
+            self.lo, self.hi, self.cache = lo, hi, None
+            self.empty = False
+            if hi - lo <= 256:
+                self.left = self.right = None
+                self.ranges = [(lo, hi)]
+            else:
+                middle = (lo + hi) // 2
+                self.left, self.right = Node(lo, middle), Node(middle, hi)
+        def summary(self, cursor=0):
+            if self.empty or self.hi <= cursor:
+                return identity
+            if cursor <= self.lo and self.cache is not None:
+                return self.cache
+            if self.left is None:
+                result = summarize([(max(lo, cursor), hi) for lo, hi in self.ranges if hi > cursor])
+            else:
+                result = merge(self.left.summary(cursor), self.right.summary(cursor))
+            if cursor <= self.lo:
+                self.cache = result
+            return result
+        def clear(self, lo, hi):
+            if self.empty or hi <= self.lo or lo >= self.hi:
+                return
+            self.cache = None
+            if lo <= self.lo and self.hi <= hi:
+                self.empty = True
+            elif self.left is None:
+                ranges = []
+                for start, end in self.ranges:
+                    if start < lo:
+                        ranges.append((start, min(end, lo)))
+                    if end > hi:
+                        ranges.append((max(start, hi), end))
+                self.ranges = [(start, end) for start, end in ranges if start < end]
+                self.empty = not self.ranges
+            else:
+                self.left.clear(lo, hi)
+                self.right.clear(lo, hi)
+                self.empty = self.left.empty and self.right.empty
+        def pieces(self):
+            if not self.empty:
+                if self.left is None:
+                    for lo, hi in self.ranges:
+                        yield text[lo:hi]
+                else:
+                    yield from self.left.pieces()
+                    yield from self.right.pieces()
+    root = Node(0, len(text))
+    while True:
+        matches, cursor = [], 0
+        while True:
+            match = root.summary(cursor)[2]
+            if match is None:
+                break
+            matches.append(match)
+            cursor = match[1]
+        if not matches:
+            return ''.join(root.pieces()).strip()
+        for lo, hi in matches:
+            root.clear(lo, hi)
+
+
 def shape(text):
     """Mechanical layout, tag order and whole/partial emphasis; meaning needs reading.
 
@@ -773,28 +1084,32 @@ def shape(text):
     result, active = [], []
     for line in text.split('\n'):
         tags, coverage, cursor = [], [False, False], 0
-        for m in re.finditer(r'<[^>]*>|\{[^}]*\}', line):
-            if re.search(r'\w', line[cursor:m.start()]):
+        visible = []
+        for start, end in markup_spans(line):
+            body = line[cursor:start]
+            visible.append(body)
+            if re.search(r'\w', body):
                 coverage[bool(active)] = True
-            tags.append(m[0])
-            tag = re.match(r'<(/?)([A-Za-z]+)', m[0])
+            token = line[start:end]
+            tags.append(token)
+            tag = re.match(r'<(/?)([A-Za-z]+)', token)
             if tag:
                 close, name = tag.groups()
                 if close:
                     if active: active.pop()
                 else:
                     active.append(name.lower())
-            cursor = m.end()
+            cursor = end
+        visible.append(line[cursor:])
         if re.search(r'\w', line[cursor:]):
             coverage[bool(active)] = True
         result.append((bool(re.match(r'\s*[-–—]', line)), tags, tuple(coverage),
-                       re.findall(r'[?!…♪♫]', re.sub(r'<[^>]*>|\{[^}]*\}', '', line))))
+                       re.findall(r'[?!…♪♫]', ''.join(visible))))
     return result
 
 def markup_valid(text):
     stack = []
-    for match in re.finditer(r'<(/?)([A-Za-z]+)(?:\s[^>]*)?>', text):
-        close, tag = match.groups()
+    for close, tag in named_tags(text):
         tag = tag.lower()
         require(tag in {'i', 'b', 'u', 'font'}, 'Unsupported SRT tag; inspect original and hold')
         if close:
@@ -835,42 +1150,42 @@ def classified_parts(cue, unit):
         parts = [{'span': [0, len(cue['text'])], 'kind': unit['kind'],
                   **{k: unit[k] for k in ('identity', 'artist_lookup') if k in unit}}]
     require(isinstance(parts, list) and parts, 'Mixed cue requires explicit source parts')
-    covered, previous = set(), 0
+    previous = 0
     for part in parts:
         require(isinstance(part, dict) and part.get('kind') in kinds and
                 set(part) <= {'span', 'kind', 'identity', 'artist_lookup'}, 'Invalid source part')
         span = part.get('span')
         require(isinstance(span, list) and len(span) == 2 and all(type(x) is int for x in span) and
                 previous <= span[0] < span[1] <= len(cue['text']), 'Source parts must be ordered nonoverlapping valid spans')
+        require(not cue['text'][previous:span[0]].strip(),
+                'Classify all nonwhitespace source text; omission is not an unclassified gap')
         previous = span[1]
         require(cue['text'][span[0]:span[1]].strip(), 'Source part cannot be whitespace only')
-        covered.update(range(*span))
         if part['kind'] == 'track_info':
             artist_lookup(part)
             raw = re.sub(r'\s+', ' ', cue['text'][span[0]:span[1]])
             require(all(re.sub(r'\s+', ' ', v) in raw for v in part['identity'].values()),
                     'Song identity must occur literally in exact source span')
-    require(all(n in covered for n, c in enumerate(cue['text']) if not c.isspace()),
+    require(not cue['text'][previous:].strip(),
             'Classify all nonwhitespace source text; omission is not an unclassified gap')
     return parts
 
 def projection(cue, unit):
-    text = list(cue['text'])
+    text, cursor = [], 0
     parts = classified_parts(cue, unit)
     for part in parts:
-        if part['kind'] in {'nonverbal', 'speaker'}:
-            for n in range(*part['span']):
-                if text[n] != '\n':
-                    text[n] = ''
+        start, end = part['span']
+        text.append(cue['text'][cursor:start])
+        body = cue['text'][start:end]
+        text.append('\n' * body.count('\n') if part['kind'] in {'nonverbal', 'speaker'} else body)
+        cursor = end
+    text.append(cue['text'][cursor:])
     lines = []
     for line in ''.join(text).split('\n'):
         line = line.strip()
         # Empty markup/standalone speaker dashes belong only to excluded material.
-        previous = None
-        while previous != line:
-            previous = line
-            line = re.sub(r'<(i|b|u|font)(?:\s[^>]*)?>\s*</\1>', '', line).strip()
-        if line and re.sub(r'<[^>]*>|\{[^}]*\}', '', line).strip(' -–—'):
+        line = empty_markup(line) if '</' in line else line
+        if line and visible_text(line).strip(' -–—'):
             lines.append(line)
     projected = '\n'.join(lines)
     if projected:
@@ -1214,7 +1529,7 @@ def validate_output(s, units=None, supplements=None, ctx=None, allow_retired=Fal
         require(shape(projected) == shape(text), 'SSOT line/speaker/emphasis/expressive punctuation structure changed: ' + key)
         for part in parts:
             if part['kind'] == 'track_info':
-                visible = re.sub(r'\s+', ' ', re.sub(r'<[^>]*>|\{[^}]*\}', '', text))
+                visible = re.sub(r'\s+', ' ', visible_text(text))
                 require(all(re.sub(r'\s+', ' ', v) in visible for v in part['identity'].values()), 'Source song identity omitted')
         result.append({'id': 'O' + key[1:], 'start': originals[key]['start'], 'end': originals[key]['end'], 'text': text})
     for key, x in supplements.items():
@@ -1805,7 +2120,7 @@ def status(s):
         return {'contract': CONTRACT, 'approved': False, 'phase': 'held', 'blocking': [str(e)], 'metrics': s['metrics'], 'tokens': 'not_measured'}
 
 
-def finalize(s, batch_preflight=False):
+def finalize(s, batch_preflight=False, *, destination_guard=None):
     require(batch_preflight or not record_exists(Path(s['context_path']).with_name('batch.json')), 'Finalize the batch parent for a directory request')
     a = Analysis(s)
     raw = ready(s, a)
@@ -1826,6 +2141,8 @@ def finalize(s, batch_preflight=False):
         require(ready(s) == raw, 'Inputs changed during placement')
         check_directory(s['target_directory'])
         check_destination(s['target'], protected_paths(s))
+        if destination_guard is not None:
+            destination_guard(s)
         require(filehash(s['target']) == current, 'Target changed during placement')
     guard()
     atomic(s['target'], raw, guard=guard)
@@ -1841,6 +2158,7 @@ def finalize_batch(work):
     require(not any(x['decision'] == 'held' for x in manifest.get('excluded', [])), 'Requested items held during inspection; resolve with fresh preparation')
     loaded = [load(p) for p in manifest['items']]
     require(len({s['target'] for s, _ in loaded}) == len(loaded), 'Duplicate targets')
+    destination_guard = batch_destination_guard([s for s, _ in loaded], manifest.get('excluded', ()))
     for s, _ in loaded:
         ready(s)
         check_directory(s['target_directory'])
@@ -1849,7 +2167,7 @@ def finalize_batch(work):
     results = []
     for s, path in loaded:
         try:
-            results.append(finalize(s, batch_preflight=True))
+            results.append(finalize(s, batch_preflight=True, destination_guard=destination_guard))
             with transaction(root) as db:
                 domain_store.Store(db, globals()).save_phase(s, 'finalize')
             write_record(root / 'placement-results.json', packed({'complete': False, 'results': results}))

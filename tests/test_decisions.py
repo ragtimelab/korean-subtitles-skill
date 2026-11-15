@@ -240,6 +240,63 @@ class Season(Fixture):
         first,second,fw,sw,root=self.make_group();second['target']=first['target'];w.write_record(sw/'state.json',w.packed(second))
         with self.assertRaises(w.Error):w.finalize_batch(root)
 
+    def test_batch_cross_item_source_rejected_before_any_replace(self):
+        first,second,fw,sw,root=self.make_group()
+        target=Path(first['target']); target.write_bytes(self.ko.read_bytes())
+        first['target_hash']=w.filehash(target)
+        second['sources']['ko']['origin_path']=str(target)
+        w.write_record(fw/'state.json',w.packed(first));w.write_record(sw/'state.json',w.packed(second))
+        before=target.read_bytes()
+        with patch.object(w.os,'replace',side_effect=AssertionError('must preflight first')):
+            with self.assertRaisesRegex(w.Error,'Batch destination aliases'):w.finalize_batch(root)
+        self.assertEqual(target.read_bytes(),before)
+        self.assertFalse(Path(second['target']).exists())
+
+    def test_batch_resource_roles_alias_refresh_and_baseline_exception(self):
+        import os
+        first,second,fw,sw,root=self.make_group()
+        a=Path(first['target']); b=Path(second['target'])
+        # Only the exact own deployed baseline role is replaceable.
+        with patch.object(w,'protected_resources',side_effect=lambda s:[(a,'baseline')] if s is first else []):
+            guard=w.batch_destination_guard([first,second])
+            guard(first)
+        with patch.object(w,'protected_resources',side_effect=lambda s:[(a,'baseline'),(a,'protected')] if s is first else []):
+            with self.assertRaises(w.Error):w.batch_destination_guard([first,second])
+        victim=root/'source.srt';victim.write_bytes(b'keep')
+        with patch.object(w,'protected_resources',side_effect=lambda s:[] if s is first else [(victim,'protected')]):
+            guard=w.batch_destination_guard([first,second])
+            os.link(victim,a)
+            with self.assertRaises(w.Error):guard(first)
+            self.assertEqual(victim.read_bytes(),b'keep')
+            a.unlink()
+        a.write_bytes(b'keep');os.link(a,b)
+        with self.assertRaises(w.Error):w.batch_destination_guard([first,second])
+
+    def test_skipped_output_path_is_protected(self):
+        first,second,fw,sw,root=self.make_group()
+        skipped=Path(first['target']).with_suffix('').with_suffix('.mp4')
+        with self.assertRaises(w.Error):
+            w.batch_destination_guard([first,second],[{'media':str(skipped),'decision':'skipped'}])
+
+    def test_batch_final_write_guard_rejects_late_cross_item_alias(self):
+        import os
+        first,second,fw,sw,root=self.make_group()
+        unique=root/'unique-original.srt'
+        unique.write_bytes(Path(second['sources']['ko']['origin_path']).read_bytes())
+        second['sources']['ko']['origin_path']=str(unique)
+        w.write_record(sw/'state.json',w.packed(second))
+        for s,work in ((first,fw),(second,sw)):
+            self.s=s;self.work=work;self.read();self.approve();self.save()
+        a=Path(first['target']); original=Path(second['sources']['ko']['origin_path'])
+        before=original.read_bytes();real=w.os.fsync
+        def alias(fd):
+            real(fd)
+            if not a.exists():os.link(original,a)
+        with patch.object(w.os,'fsync',side_effect=alias):
+            with self.assertRaisesRegex(w.Error,'Batch destination aliases'):w.finalize_batch(root)
+        self.assertEqual(original.read_bytes(),before)
+        self.assertFalse(Path(second['target']).exists())
+
 
 class SourceAndTelemetry(Fixture):
     def test_usable_embedded_sdh_blocks_lower_priority(self):

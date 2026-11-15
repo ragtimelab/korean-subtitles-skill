@@ -1,17 +1,17 @@
 {
   "LICENSE": "f3b18a52d2669b9a25e2bfeb5181cb26c988c7b7c01addbcaeb319a22105adab",
-  "SECURITY.md": "1b855eefda2a7dc1058beef1fba66f4567f5223d589e278f9fac8dbe13d44c22",
-  "SKILL.md": "f7158f5186830fbad2da57829ca7304234934b843b3f84fabb5110d69674bf30",
+  "SECURITY.md": "ee75a51523cfc388f430acec83fca93bf91fe7604ae385db8331aba8fc68ecf3",
+  "SKILL.md": "4f9ab735696595bb5fe9af5ae60e701e8ce06c61c7f5ff27ad1ce2b206c86a7b",
   "agents/openai.yaml": "975e96326076ecff1b0461fb97a1ea1b2a3100e1a878e7d41d805cabd68da876",
   "references/author.md": "2a5f4c61e2f1e28ba697696bdd1b3720cb98deb0a8dd8648ee00c61bfbe20d2b",
   "references/collection.md": "aef8adaead878792759da3bc8976532c580cc0db7315b1d09580da2d56f0f38b",
   "references/evidence.md": "2d5a23ffef2f747d0e41f3760abe83f5d8adc85bb598d00c0cccb46adca8d253",
   "references/execution.md": "99209eea58251e705dd6e349a0af7ceee1dfc96bd2241f9320ee3e69d05028a0",
-  "references/operations.md": "446e24c63156725f095fcee0c9050dc3de4e4b255b19ae52e26b3aeaa7bf7e19",
+  "references/operations.md": "10406d28f2c6196fb88cfcc61c651b94c2bb2fd5fde70621c678de28d6425601",
   "references/records.md": "936e3546e86abef65d7af07c422505d4e3b18df42a7b366ba4fea9a61b87051a",
   "references/review.md": "517177b9a486cfb1e30d090d2b2df50f1df7101ca46de5ad692bf5cddb4504fa",
   "references/workflow.md": "965f5b659e4a831fedfc34558c26f31f31d69544cdab7ee6bce63d9f4f481d14",
   "scripts/domain_store.py": "5929b212cbd22ed7a1265fdf989f11de8d300c2209772e45caa1719dd23e5f35",
-  "scripts/subtitles.py": "71d2b0d14fdbbcc966a82b78151047298d200591fc96942c1ecc3662a3ae510a",
+  "scripts/subtitles.py": "29a39f15b80acf42f3aa47ad8b0ac9607490923d40ab9706c0ebd4c761e10f63",
   "scripts/telemetry.py": "b4324825c6c49beee0275400b02fc888265d3e9b18a580832eb14f8ecc21bb22"
 }

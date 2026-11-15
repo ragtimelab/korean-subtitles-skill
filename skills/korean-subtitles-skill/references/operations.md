@@ -24,7 +24,7 @@ Native records use `(thread_id,response_id)` identities and explicit root-turn a
 
 With `--template`, the response contains `response_template` instead of echoing `submit`; edit and submit that generated file. Without it, `submit` remains inline. `status` reports `context_revision` for context update base.
 
-Finalize commits each placement intent before file replacement, rehashes the actual target and records completion. After interruption, matching approved target bytes reconcile completion; unchanged previous target bytes may proceed under all current guards; any other bytes hold. Batch placement remains per-file atomic with whole-request preflight and partial results, never a whole-batch transaction.
+Finalize commits each placement intent before file replacement, rehashes the actual target and records completion. After interruption, matching approved target bytes reconcile completion; unchanged previous target bytes may proceed under all current guards; any other bytes hold. Batch preflight checks all recorded item resources and outputs by path and file identity, including skipped media and their default output paths. A collision fails before output replacement; aliases are rechecked at each write guard. This adds metadata checks, not whole-batch output regeneration. Batch placement remains per-file atomic with whole-request preflight and partial results, never a whole-batch transaction.
 
 Empty optional per-unit metadata (for example `facts:[]`) is omitted from comparison display; absence retains the documented empty default. Classification, sources, output, complete pending ranges and current output hash remain available.
 
