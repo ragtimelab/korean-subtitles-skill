@@ -93,10 +93,13 @@ class ReleaseSecurity(unittest.TestCase):
     def test_real_timeout_kills_descendant_as_well_as_parent(self):
         with tempfile.TemporaryDirectory() as directory:
             sentinel = Path(directory) / 'survived'
-            child = 'import pathlib,time;time.sleep(.8);pathlib.Path(' + repr(str(sentinel)) + ').touch()'
+            started = Path(directory) / 'child-started'
+            child = ('import pathlib,time;pathlib.Path(' + repr(str(started)) + ').touch();'
+                     'time.sleep(.8);pathlib.Path(' + repr(str(sentinel)) + ').touch()')
             parent = 'import subprocess,sys,time;subprocess.Popen([sys.executable,"-c",' + repr(child) + ']);time.sleep(5)'
             with patch.object(w, 'COMMAND_TIMEOUT', .3), self.assertRaisesRegex(w.Error, 'timed out'):
                 w.command([sys.executable, '-c', parent])
+            self.assertTrue(started.exists(), 'The descendant must actually start before timeout')
             time.sleep(.9)
             self.assertFalse(sentinel.exists())
 
