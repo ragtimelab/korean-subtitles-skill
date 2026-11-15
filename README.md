@@ -9,7 +9,7 @@ Codex with independent worker support, Python 3.10+ on POSIX, and security-patch
 Install only the selected skill to this project's Codex environment:
 
 ```sh
-npx skills@1.8.1 add ragtimelab/korean-subtitles-skill@v0.1.0 --skill korean-subtitles-skill -a codex
+npx skills@1.8.1 add ragtimelab/korean-subtitles-skill@v0.1.1 --skill korean-subtitles-skill -a codex
 ```
 
 Inspect the source and release before installing. Full commit references can replace the release tag. Installation does not authorize processing media. Invoke `$korean-subtitles-skill` with an explicit media path and requested operation; the agent follows skills/korean-subtitles-skill/SKILL.md. All generated work belongs outside the skill source directory. Existing work from a different engine fingerprint requires fresh preparation.
@@ -32,3 +32,11 @@ python3 tools/check_public.py
 ```
 
 Tests use synthetic supplied judgments. They verify mechanics, not autonomous linguistic quality. Private development records and evaluation originals are excluded.
+
+Run the supplied two-item integration fixture with:
+
+```sh
+python3 tools/bench_flow.py --engine local=skills/korean-subtitles-skill/scripts/subtitles.py --size 8 --episodes 2 --runs 1 --no-warmup
+```
+
+It creates synthetic media outside the repository, supplies study/correction/review judgments, exercises batch placement, and checks exact output hashes. It does not run independent language agents or establish translation quality or a performance improvement.

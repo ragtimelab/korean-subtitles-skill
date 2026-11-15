@@ -11,6 +11,8 @@ from pathlib import Path
 import re
 import subprocess
 import selectors
+import signal
+import stat
 import sys
 import tempfile
 import time
@@ -148,8 +150,21 @@ def transaction(root, create=False):
         return
     require(create or database(root).is_file(), 'Run prepare fresh for the SQLite contract')
     if create:
-        root.mkdir(parents=True, exist_ok=True, mode=0o700)
-    db = sqlite3.connect(database(root), timeout=5)
+        private_mkdir(root)
+    # Create before SQLite opens it: library callers also get private DB/journals.
+    db_path = database(root)
+    fd = os.open(db_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        info = os.fstat(fd)
+        require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1, 'Unsafe database file')
+        require(info.st_mode & 0o077 == 0, 'Database must be owner-only')
+    finally:
+        os.close(fd)
+    previous_umask = os.umask(0o077)
+    try:
+        db = sqlite3.connect(db_path, timeout=5)
+    finally:
+        os.umask(previous_umask)
     db.execute('PRAGMA foreign_keys=ON')
     db.execute('PRAGMA synchronous=FULL')
     initialize = create and not db.execute("SELECT 1 FROM sqlite_master WHERE name='records'").fetchone()
@@ -229,10 +244,61 @@ def write_record(path, content):
                 for state_path, in db.execute("SELECT path FROM records WHERE path LIKE '%/state.json'").fetchall():
                     store.rebuild(load(Path(state_path).parent)[0])
 
-def atomic(path, content):
+def private_mkdir(path):
+    path = Path(path)
+    if path.is_dir():
+        return
+    private_mkdir(path.parent)
+    path.mkdir(mode=0o700, exist_ok=True)
+
+
+def directory_binding(path):
+    parent = Path(path).absolute().parent
+    while not parent.exists():
+        parent = parent.parent
+    info = parent.stat()
+    return {'path': str(parent.resolve()), 'identity': [info.st_dev, info.st_ino]}
+
+
+def check_directory(binding):
+    path = Path(binding['path'])
+    require(str(path.resolve()) == binding['path'] and path.is_dir(), 'Write directory changed')
+    info = path.stat()
+    require([info.st_dev, info.st_ino] == binding['identity'], 'Write directory changed')
+
+
+def protected_paths(s):
+    work = Path(s['work'])
+    root = store_root(work / 'state.json')
+    paths = {s['media'], str(database(root)), str(root / '.lock'),
+             s['context_path'], str(work / 'item.json'), str(work / 'base.srt')}
+    for source in s['sources'].values():
+        paths.update(source.get(key) for key in ('path', 'original_path'))
+        # Bounded patches explicitly authorize replacing their deployed baseline;
+        # the preserved baseline snapshot remains protected.
+        origin = source.get('origin_path')
+        baseline_target = (s.get('patch') and source.get('origin') == 'baseline' and
+                           origin and Path(origin).resolve() == Path(s['target']).resolve())
+        if origin and not baseline_target:
+            paths.add(origin)
+    paths.update(e.get('path') for e in context(s)['evidence'].values())
+    return {Path(p).resolve() for p in paths if p}
+
+
+def check_destination(path, protected):
+    path = Path(path).absolute()
+    require(not path.is_symlink(), 'Destination cannot be a symlink')
+    resolved = path.resolve()
+    require(resolved == path, 'Write directory changed')
+    for source in protected:
+        require(resolved != source and not (path.exists() and source.exists() and
+                os.path.samefile(path, source)), 'Destination aliases a protected file')
+
+
+def atomic(path, content, guard=None):
     path = Path(path).absolute()
     require(not path.is_symlink(), 'Refuse symlink write destination')
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    private_mkdir(path.parent)
     # Anchor each directory lookup; never follow a swapped directory symlink.
     parent = path.parent.resolve()
     fd = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
@@ -252,10 +318,14 @@ def atomic(path, content):
             os.fsync(stream.fileno())
         try:
             st = os.stat(path.name, dir_fd=fd, follow_symlinks=False)
-            import stat
             require(stat.S_ISREG(st.st_mode), 'Destination must be a regular file')
         except FileNotFoundError:
             pass
+        require(path.parent.resolve() == parent and
+                os.stat(parent).st_ino == os.fstat(fd).st_ino and
+                os.stat(parent).st_dev == os.fstat(fd).st_dev, 'Write directory changed')
+        if guard is not None:
+            guard()
         os.replace(name, path.name, src_dir_fd=fd, dst_dir_fd=fd)
         name = None
         os.fsync(fd)
@@ -265,6 +335,9 @@ def atomic(path, content):
         os.close(fd)
 
 MAX_INPUT = 64 * 1024 * 1024
+PROBE_TIMEOUT = 120
+COMMAND_TIMEOUT = 300
+MAX_STDERR = 1024 * 1024
 
 def input_bytes(path):
     with Path(path).open('rb') as stream:
@@ -326,10 +399,10 @@ def command(args):
     tool = Path(args[0]).name
     if tool in {'ffmpeg', 'ffprobe'}:
         args[1:1] = ['-protocol_whitelist', 'file,pipe']
-    timeout = 120 if tool == 'ffprobe' else 300
+    timeout = PROBE_TIMEOUT if tool == 'ffprobe' else COMMAND_TIMEOUT
     try:
         with subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                              stderr=subprocess.PIPE) as proc:
+                              stderr=subprocess.PIPE, start_new_session=True) as proc:
             buffers = {proc.stdout: bytearray(), proc.stderr: bytearray()}
             deadline = time.monotonic() + timeout
             try:
@@ -345,13 +418,16 @@ def command(args):
                                 continue
                             buffer = buffers[key.fileobj]
                             buffer.extend(chunk)
-                            limit = MAX_INPUT if key.fileobj is proc.stdout else 1024 * 1024
+                            limit = MAX_INPUT if key.fileobj is proc.stdout else MAX_STDERR
                             require(len(buffer) <= limit, 'Command output limit exceeded')
                 require(proc.wait(timeout=max(.01, deadline-time.monotonic())) == 0,
                         'Command failed: ' + tool)
                 return bytes(buffers[proc.stdout])
             except BaseException:
-                proc.kill()
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
                 proc.wait()
                 raise
     except (OSError, subprocess.SubprocessError) as e:
@@ -430,7 +506,8 @@ def prepare_one(media, work, target=None, shared=None, base=None, scope=None,
     require((base is None) == (scope is None), '--base and --scope must be used together')
     state = {'contract': CONTRACT, 'engine': ENGINE_HASH, 'media': str(media), 'media_identity': inspected['media_identity'], 'duration': duration,
              'admission': {'intent': intent, 'authorization': authorization, 'inspection': inspection_result(inspected)},
-             'target': str(output), 'target_hash': filehash(output), 'tracks': tracks,
+             'target': str(output), 'target_hash': filehash(output),
+             'target_directory': directory_binding(output), 'tracks': tracks,
              'sidecars': [str(p) for p in sorted(media.parent.glob(media.stem + '*.srt'))],
              'context_path': str(Path(shared).resolve()) if shared else str(work / 'context.json'),
              'work': str(work), 'author': None, 'sealed': None, 'revision': 0,
@@ -470,7 +547,8 @@ def prepare_one(media, work, target=None, shared=None, base=None, scope=None,
                                  'provenance': {'kind': 'deployed_baseline', 'authorization': record['authorization']},
                                  'presentation_evidence': {'checked': 'Exact baseline snapshot; inspect scoped text before learning.',
                                      'preserved': 'Output preserves bytes outside approved text changes.', 'limitations': [], 'resolved': True}}
-    work.mkdir(parents=True, exist_ok=True, mode=0o700)
+    require(output != work and work not in output.parents, 'Output cannot be inside work storage')
+    private_mkdir(work)
     root = Path(shared).resolve().parent if shared else work
     with transaction(root, create=True):
         pass
@@ -1744,7 +1822,13 @@ def finalize(s, batch_preflight=False):
         for key in ('path',):
             original = source.get(key)
             require(not (original and Path(original).exists() and Path(s['target']).exists() and os.path.samefile(original, s['target'])), 'Output aliases a source')
-    atomic(s['target'], raw)
+    def guard():
+        require(ready(s) == raw, 'Inputs changed during placement')
+        check_directory(s['target_directory'])
+        check_destination(s['target'], protected_paths(s))
+        require(filehash(s['target']) == current, 'Target changed during placement')
+    guard()
+    atomic(s['target'], raw, guard=guard)
     require(filehash(s['target']) == digest(raw), 'Placed bytes differ; inspect before retry')
     s['target_hash'] = digest(raw)
     write_record(intent_path, packed({'intent': digest(raw), 'target': s['target'], 'complete': True}))
@@ -1759,6 +1843,8 @@ def finalize_batch(work):
     require(len({s['target'] for s, _ in loaded}) == len(loaded), 'Duplicate targets')
     for s, _ in loaded:
         ready(s)
+        check_directory(s['target_directory'])
+        check_destination(s['target'], protected_paths(s))
         require(approval_valid(s) and (filehash(s['target']) == s['target_hash'] or (record_exists(Path(s['work']) / 'placement-results.json') and read_record(Path(s['work']) / 'placement-results.json').get('intent') == filehash(s['target']) == Analysis(s).output_sha256)) and Path(s['target']).suffix == '.srt', 'Batch preflight failed')
     results = []
     for s, path in loaded:
@@ -1868,20 +1954,17 @@ def save_template(root, dest, result, items, persist=True):
     root = Path(root).resolve()
     if dest is True:
         dest = root / 'responses' / ('packet-' + digest({'mode':result.get('mode'),'packet':result['packet']})[:20] + '.json')
+    require(not Path(dest).is_symlink(), 'Template cannot be a symlink')
     dest = Path(dest).resolve()
     require(root / 'responses' in dest.parents, 'Templates belong under WORK/responses/')
-    guarded = set()
+    guarded = {Path(item['target']).resolve() for item in items}
     for item in items:
-        guarded.update({item['media'], item['target'], str(Path(item['work']) / 'state.json'), item['context_path']})
-        for source in item['sources'].values():
-            guarded.update(source.get(k) for k in ('path', 'origin_path', 'original_path'))
-    with transaction(store_root(Path(items[0]['work']) / 'state.json')) as db:
-        evidence_entries = domain_store.Store(db, globals()).context_header(items[0])['evidence']
-    for evidence in evidence_entries.values():
-        guarded.add(evidence.get('path'))
-    require(str(dest) not in guarded, 'Template destination is protected')
+        guarded.update(protected_paths(item))
+    def guard():
+        check_destination(dest, guarded)
+    guard()
     before = len(packed(result))
-    atomic(dest, packed(result.pop('submit')))
+    atomic(dest, packed(result.pop('submit')), guard=guard)
     result['response_template'] = str(dest)
     delta = len(packed(result)) - before
     if result.get('mode') == 'study':
