@@ -4,18 +4,18 @@ Collect and audit ordinary Korean subtitles against a verified English source of
 
 ## Requirements and installation
 
-Codex with independent worker support, Python 3.10+ on POSIX, and security-patched ffmpeg/ffprobe on PATH. Compressed optional usage logs also need zstd. macOS is locally tested; Linux is checked by CI. Windows is unsupported (fcntl and POSIX file APIs). No model API keys or Python runtime packages are required.
+An LLM agent host with file/command tools and actual independent worker execution or connection, Python 3.10+ on POSIX, and security-patched ffmpeg/ffprobe on PATH. Compressed optional usage logs also need zstd. macOS is locally tested; Linux is checked by CI. Windows is unsupported (fcntl and POSIX file APIs). No model API keys or Python runtime packages are required.
 
-Install only the selected skill to this project's Codex environment:
+Install the selected skill and choose the target agent environment:
 
 ```sh
-npx skills@1.8.1 add ragtimelab/korean-subtitles-skill@v0.1.2 --skill korean-subtitles-skill -a codex
+npx skills@1.8.1 add ragtimelab/korean-subtitles-skill@v0.2.0 --skill korean-subtitles-skill
 ```
 
-Inspect the source and release before installing. Full commit references can replace the release tag. Installation does not authorize processing media. Invoke `$korean-subtitles-skill` with an explicit media path and requested operation; the agent follows skills/korean-subtitles-skill/SKILL.md. All generated work belongs outside the skill source directory. Existing work from a different engine fingerprint requires fresh preparation.
+Inspect the source and release before installing. Full commit references can replace the release tag. Installation does not authorize processing media. Invoke the skill through the host’s skill mechanism (for example `$korean-subtitles-skill`) with an explicit media path and requested operation; the agent follows skills/korean-subtitles-skill/SKILL.md. All generated work belongs outside the skill source directory. Existing work from a different engine fingerprint requires fresh preparation.
 
 ```sh
-npx skills@1.8.1 remove korean-subtitles-skill -a codex
+npx skills@1.8.1 remove korean-subtitles-skill
 ```
 
 Updates should select a reviewed release explicitly with the install command. `skills update` can advance source revisions; inspect the result before use. Do not overwrite an existing global/local installation without checking its source and modifications.
@@ -40,3 +40,11 @@ python3 tools/bench_flow.py --engine local=skills/korean-subtitles-skill/scripts
 ```
 
 It creates synthetic media outside the repository, supplies study/correction/review judgments, exercises batch placement, and checks exact output hashes. It does not run independent language agents or establish translation quality or a performance improvement.
+
+## Agent compatibility
+
+The common package has no vendor allowlist. Skills CLI targets include `codex`, `claude-code`, `gemini-cli`, `grok` (Grok Build) and `universal`; append `-a TARGET` to choose one. See [the pinned installer target reference](https://github.com/vercel-labs/skills/blob/v1.8.1/docs/agents.md). Other hosts may load the standard package using their own skill loader. A product's ordinary chat interface does not acquire local tools merely by installing instructions.
+
+Read the package's [execution contract](skills/korean-subtitles-skill/references/execution.md). File/command execution and real independent workers are capabilities, not product restrictions. No manual command/copy handoff is the default. Missing capability is reported without inventing approval. macOS/Linux are supported; Windows needs a POSIX execution environment. Installation, supplied-judgment tests and real agent execution are distinct evidence; no universal autonomous language-quality claim is made. Optional usage parsing currently supports Codex-native logs; other logs remain not_measured.
+
+Release validation distinguishes five isolated installer targets (Codex, Claude Code, Gemini CLI, Grok Build and Universal) from actual execution: two independent workers on the available host corrected and cross-reviewed two synthetic episodes through approval and batch placement. This does not certify execution on every target or autonomous language quality.

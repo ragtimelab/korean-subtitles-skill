@@ -6,7 +6,9 @@ Assigned language workers use [records.md](records.md). These operations apply o
 
 `prepare MEDIA --work NEW --base DEPLOYED.srt --scope SCOPE.json` snapshots deployed bytes. Scope has `reason`, exact user `authorization`, E/K `ids`, and `changes:[{id:K_ID,before:EXACT_TEXT,after:EXACT_TEXT}]`. Select English; do not replace/relabel the fixed Korean baseline. Source coverage/output/review includes all declared scope and necessary context. Only authorized exact text changes may differ; cue structure must match the English or hold. Bytes outside changed text, BOM, cue numbers and newline styles survive exactly.
 
-## Usage reporting
+## Optional usage reporting
+
+The current parser supports Codex-native logs, not every provider format. It is never a prerequisite for subtitle work on any host. Unsupported logs remain `not_measured`; host measurements may be reported separately with their actual scope.
 
 `telemetry --session-log LOG [--session-log LOG ...] --root-turn-id ROOT_TURN --start UTC_ISO --end UTC_ISO` is read-only and needs no media, work directory or project database. Supply the coordinator and all descendant logs; audit their identities against the session registry. It accepts JSONL and JSONL.zst, streaming the latter through installed `zstd` without extraction files. Unknown/missing logs are not a pass. Do not load raw session image payloads into model context.
 

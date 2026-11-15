@@ -213,3 +213,12 @@ class Telemetry(unittest.TestCase):
             check=True,
         )
         self.assertEqual(json.loads(result.stdout)["usage"]["input_tokens"], 10)
+
+class ForeignHostUsage(unittest.TestCase):
+    def test_unrecognized_host_log_is_not_measured_not_zero(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'foreign.jsonl'
+            path.write_text(json.dumps({'provider':'synthetic-host','usage':{'input':42}})+'\n')
+            result=usage_logs([str(path)], START, END)
+            self.assertEqual(result['usage'],'not_measured')
+            self.assertFalse(result['complete'])
