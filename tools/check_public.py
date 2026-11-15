@@ -1,7 +1,7 @@
 """Fail closed on unexpected files and private content in every Git tree."""
 from pathlib import Path
 import json,re,subprocess,sys
-root=Path(__file__).resolve().parents[1]
+root=Path(sys.argv[1]).resolve() if len(sys.argv)>1 else Path(__file__).resolve().parents[1]
 def fail(message):raise SystemExit(message)
 files=subprocess.check_output(['git','ls-files','-z'],cwd=root).decode().split('\0')[:-1]
 expected=json.loads((root/'public-files.json').read_text())

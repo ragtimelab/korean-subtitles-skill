@@ -25,6 +25,7 @@
   "tests/test_domain_store.py",
   "tests/test_handoff.py",
   "tests/test_native_protocol.py",
+  "tests/test_public.py",
   "tests/test_security.py",
   "tests/test_storage.py",
   "tests/test_study.py",
