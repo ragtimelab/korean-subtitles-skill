@@ -12,6 +12,6 @@
   "references/review.md": "517177b9a486cfb1e30d090d2b2df50f1df7101ca46de5ad692bf5cddb4504fa",
   "references/workflow.md": "965f5b659e4a831fedfc34558c26f31f31d69544cdab7ee6bce63d9f4f481d14",
   "scripts/domain_store.py": "5929b212cbd22ed7a1265fdf989f11de8d300c2209772e45caa1719dd23e5f35",
-  "scripts/subtitles.py": "29a39f15b80acf42f3aa47ad8b0ac9607490923d40ab9706c0ebd4c761e10f63",
+  "scripts/subtitles.py": "e13c6796e650d7583387e0c87c65a98ad2b6590fe345713ceb8801b5a4bd6ac3",
   "scripts/telemetry.py": "b4324825c6c49beee0275400b02fc888265d3e9b18a580832eb14f8ecc21bb22"
 }

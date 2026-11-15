@@ -1150,15 +1150,14 @@ def classified_parts(cue, unit):
         parts = [{'span': [0, len(cue['text'])], 'kind': unit['kind'],
                   **{k: unit[k] for k in ('identity', 'artist_lookup') if k in unit}}]
     require(isinstance(parts, list) and parts, 'Mixed cue requires explicit source parts')
-    previous = 0
+    previous, gaps_valid = 0, True
     for part in parts:
         require(isinstance(part, dict) and part.get('kind') in kinds and
                 set(part) <= {'span', 'kind', 'identity', 'artist_lookup'}, 'Invalid source part')
         span = part.get('span')
         require(isinstance(span, list) and len(span) == 2 and all(type(x) is int for x in span) and
                 previous <= span[0] < span[1] <= len(cue['text']), 'Source parts must be ordered nonoverlapping valid spans')
-        require(not cue['text'][previous:span[0]].strip(),
-                'Classify all nonwhitespace source text; omission is not an unclassified gap')
+        gaps_valid = gaps_valid and not cue['text'][previous:span[0]].strip()
         previous = span[1]
         require(cue['text'][span[0]:span[1]].strip(), 'Source part cannot be whitespace only')
         if part['kind'] == 'track_info':
@@ -1166,7 +1165,7 @@ def classified_parts(cue, unit):
             raw = re.sub(r'\s+', ' ', cue['text'][span[0]:span[1]])
             require(all(re.sub(r'\s+', ' ', v) in raw for v in part['identity'].values()),
                     'Song identity must occur literally in exact source span')
-    require(not cue['text'][previous:].strip(),
+    require(gaps_valid and not cue['text'][previous:].strip(),
             'Classify all nonwhitespace source text; omission is not an unclassified gap')
     return parts
 

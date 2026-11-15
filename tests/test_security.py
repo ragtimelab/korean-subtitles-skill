@@ -145,6 +145,13 @@ assert w.empty_markup('<'+'<i>'*512+'</i>'*512)=='<'
         text = '가' * 70000
         self.assertEqual(w.projection({'id': 'E1', 'text': text}, {'kind': 'dialogue'})[0], text)
 
+    def test_part_errors_precede_final_unclassified_gap_error(self):
+        cue={'id':'E1','text':'xx Hi'}
+        unit={'parts':{'E1':[{'span':[3,5],'kind':'track_info',
+                             'identity':{'title':'Different','artist':'Artist'}}]}}
+        with self.assertRaisesRegex(w.Error,'Song identity must occur'):
+            w.classified_parts(cue,unit)
+
 
 class ReleaseSecurity(unittest.TestCase):
     def test_database_and_live_journal_are_private_for_library_callers(self):
