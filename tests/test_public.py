@@ -41,6 +41,8 @@ class PublicGate(unittest.TestCase):
                     git('-c','user.name=fixture','-c','user.email='+address,'commit','--allow-empty','-m',message)
                 def check():return subprocess.run([sys.executable,str(gate),str(root)],capture_output=True)
                 git('init');git('add','.');commit()
+                # GitHub's synthetic PR merge commit uses this service address.
+                commit(address='noreply'+'@github.com')
                 self.assertEqual(check().returncode,0)
                 contact='person'+'@'+'example'+'.com'
                 if case=='working-contact':

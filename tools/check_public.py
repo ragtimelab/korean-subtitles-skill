@@ -32,7 +32,9 @@ skill_prefix = 'skills/korean-subtitles-skill/'
 def content(raw, name):
     if any(re.search(rule, raw) for rule in rules):
         fail('Private content: ' + name)
-    if any(not item.lower().endswith(b'@users.noreply.github.com') for item in email.findall(raw)):
+    if any(not item.lower().endswith(b'@users.noreply.github.com') and
+           not (name == 'commit metadata' and item.lower() == b'noreply' + b'@github.com')
+           for item in email.findall(raw)):
         fail('Private contact: ' + name)
 
 
