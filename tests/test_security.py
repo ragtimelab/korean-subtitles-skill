@@ -152,3 +152,19 @@ class PlacementSecurity(Fixture):
         with patch.object(w, 'protected_paths', side_effect=lambda s: original(s) | {target}), self.assertRaises(w.Error):
             w.finalize(self.s)
         self.assertEqual(target.read_bytes(), b'preserve')
+
+
+class CustomOutput(Fixture):
+    def test_custom_output_inside_work_directory_remains_supported(self):
+        work = self.root / 'custom-work'; target = work / 'custom-output.srt'
+        with patch.object(w, 'command', return_value=w.json.dumps({'format': {'duration': '30'}, 'streams': []}).encode()):
+            w.prepare_one(self.media, work, target=target)
+        self.work = work; self.s, _ = w.load(work)
+        self.select('en', self.en); self.select('ko', self.ko)
+        self.study(); self.author(); self.seal(); self.reviewed(); self.approve()
+        expected = w.output_raw(self.s)
+        result = w.finalize(self.s)
+        self.assertEqual(result['placed'], str(target.resolve()))
+        self.assertEqual(target.read_bytes(), expected)
+        self.assertEqual(w.filehash(target), result['sha256'])
+        self.assertTrue((work / 'state.sqlite3').is_file())
