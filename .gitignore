@@ -1,0 +1,12 @@
+# Python and macOS caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+
+# Generated work stays outside the skill source tree
+/.korean-subtitles-skill-work/
+/work/
+/responses/
+/state.sqlite3
+/state.sqlite3-*

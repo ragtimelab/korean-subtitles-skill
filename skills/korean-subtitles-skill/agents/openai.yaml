@@ -1,0 +1,4 @@
+interface:
+  display_name: "한글자막 수집·감사·교정"
+  short_description: "영어 SSOT의 내용과 표시구조를 기준으로 한국어를 완성하고 독립 검수합니다"
+  default_prompt: "Use $korean-subtitles-skill to skip embedded-Korean collection items, complete all requested sources and shared work study before correction, then independently review and deliver Korean faithful to the selected English SSOT, with source errors corrected only on sufficient documented evidence."
