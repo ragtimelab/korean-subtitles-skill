@@ -9,7 +9,7 @@ An LLM agent host with file/command tools and actual independent worker executio
 Install the selected skill and choose the target agent environment:
 
 ```sh
-npx skills@1.8.1 add ragtimelab/korean-subtitles-skill@v0.2.0 --skill korean-subtitles-skill
+npx skills@1.8.1 add ragtimelab/korean-subtitles-skill@v0.2.1 --skill korean-subtitles-skill
 ```
 
 Inspect the source and release before installing. Full commit references can replace the release tag. Installation does not authorize processing media. Invoke the skill through the host’s skill mechanism (for example `$korean-subtitles-skill`) with an explicit media path and requested operation; the agent follows skills/korean-subtitles-skill/SKILL.md. All generated work belongs outside the skill source directory. Existing work from a different engine fingerprint requires fresh preparation.

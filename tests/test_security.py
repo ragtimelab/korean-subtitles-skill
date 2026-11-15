@@ -48,6 +48,111 @@ class Security(unittest.TestCase):
         self.assertNotIn('root_turn_ids',result)
 
 
+class MarkupComplexity(unittest.TestCase):
+    @staticmethod
+    def legacy_projection(text):
+        """Bounded test oracle for the old observable dialogue projection."""
+        import re
+        lines = []
+        for line in text.split('\n'):
+            line = line.strip()
+            previous = None
+            while previous != line:
+                previous = line
+                line = re.sub(r'<(i|b|u|font)(?:\s[^>]*)?>\s*</\1>', '', line).strip()
+            if line and re.sub(r'<[^>]*>|\{[^}]*\}', '', line).strip(' -–—'):
+                lines.append(line)
+        projected = '\n'.join(lines)
+        stack = []
+        for match in re.finditer(r'<(/?)([A-Za-z]+)(?:\s[^>]*)?>', projected):
+            close, name = match.groups(); name = name.lower()
+            w.require(name in {'i', 'b', 'u', 'font'}, 'Unsupported SRT tag; inspect original and hold')
+            if close:
+                w.require(stack and stack.pop() == name, 'Unbalanced SRT markup')
+            else:
+                stack.append(name)
+        w.require(not stack, 'Unbalanced SRT markup')
+        return projected
+
+    def test_projection_compatibility_corpus(self):
+        import random
+        cases = ['x < 3', '{draft', '<I></I>', '<i><b> </b></i>word',
+                 '<font color=red>가</font>', '<0<x>>', '<font x=<i></i>',
+                 '<i a=<b></b>></i>', '<<b></b>i></i>',
+                 '<i a=<b> </b>\tx<i></i><<i a=</i>', '- <i>가</i>?\n- 나!',
+                 '<i<b></b> <i></i>x', '<u><i<b></b> <i></i>',
+                 '<i><i><I><i a=<font></font><i a=<font></i><font x=</font ></font>']
+        randomizer = random.Random(9)
+        pieces = ['<i>', '</i>', '<b>', '</b>', '<font x=', '>', '<', '{', '}',
+                  'x', ' ', '\n', 'I', 'i', '</font>', '<i a=', '</u>', '\t']
+        cases += [''.join(randomizer.choices(pieces, k=randomizer.randrange(1, 20)))
+                  for _ in range(3000)]
+        for text in cases:
+            if not text.strip():
+                continue
+            def outcome(fn):
+                try:
+                    return ('ok', fn())
+                except w.Error as error:
+                    return ('error', str(error))
+            expected = outcome(lambda: self.legacy_projection(text))
+            actual = outcome(lambda: w.projection({'id': 'E1', 'text': text}, {'kind': 'dialogue'})[0])
+            self.assertEqual(actual, expected, repr(text))
+
+    def test_simultaneous_replacement_rounds_survive_tag_formation(self):
+        import random, re
+        cases = ['<i<b></b> <i></i>x', '<<b></b>i></i>', '<i a=<b></b>></i>',
+                 '<i a=<b> </b>\tx<i></i><<i a=</i>', '<u><i<b></b> <i></i>',
+                 '<i><i><I><i a=<font></font><i a=<font></i><font x=</font ></font>']
+        randomizer = random.Random(31)
+        pieces = ['<i>', '</i>', '<b>', '</b>', '<font x=', '>', '<', 'x', ' ', '\t']
+        cases += [''.join(randomizer.choices(pieces, k=randomizer.randrange(1, 16)))
+                  for _ in range(400)]
+        for text in cases:
+            expected, previous = text, None
+            while expected != previous:
+                previous = expected
+                expected = re.sub(r'<(i|b|u|font)(?:\s[^>]*)?>\s*</\1>', '', expected).strip()
+            self.assertEqual(w.empty_markup(text), expected)
+            self.assertEqual(w.empty_markup_rounds(text), expected)
+
+    def test_broad_spans_and_named_validation_remain_distinct(self):
+        self.assertEqual(w.visible_text('a < 3 {draft'), 'a < 3 {draft')
+        self.assertEqual(w.visible_text('a{\\an8}<i>b</i>'), 'ab')
+        with self.assertRaisesRegex(w.Error, 'Unsupported'):
+            w.markup_valid('<0<x>>')
+        w.markup_valid('<FONT color=\nred>가</FONT>')
+        self.assertEqual(w.shape('<i>가\n나</i>')[1][2], (False, True))
+
+    def test_hostile_inputs_finish_in_bounded_process(self):
+        # A timeout contains regressions in the implementation under test.
+        code = """import sys
+sys.path.insert(0,sys.argv[1])
+import subtitles as w
+for char in ('<','{'):
+ text=char*100000+'x'
+ assert w.shape(text)
+ assert w.projection({'id':'E1','text':text},{'kind':'dialogue'})[0]==text
+w.markup_valid('<i '*40000)
+assert w.empty_markup('<i>'*20000+'</i>'*20000)==''
+assert w.empty_markup('<'+'<i>'*512+'</i>'*512)=='<'
+"""
+        result = subprocess.run([sys.executable, '-B', '-c', code, str(Path(w.__file__).parent)],
+                                capture_output=True, text=True, timeout=4)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_large_literal_cue_is_not_newly_rejected(self):
+        text = '가' * 70000
+        self.assertEqual(w.projection({'id': 'E1', 'text': text}, {'kind': 'dialogue'})[0], text)
+
+    def test_part_errors_precede_final_unclassified_gap_error(self):
+        cue={'id':'E1','text':'xx Hi'}
+        unit={'parts':{'E1':[{'span':[3,5],'kind':'track_info',
+                             'identity':{'title':'Different','artist':'Artist'}}]}}
+        with self.assertRaisesRegex(w.Error,'Song identity must occur'):
+            w.classified_parts(cue,unit)
+
+
 class ReleaseSecurity(unittest.TestCase):
     def test_database_and_live_journal_are_private_for_library_callers(self):
         with tempfile.TemporaryDirectory() as directory:
