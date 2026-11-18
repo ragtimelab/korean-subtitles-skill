@@ -1,9 +1,9 @@
 ---
-name: korean-subtitles-skill
+name: korean-subtitles
 description: Collect ordinary Korean subtitles, audit them against a verified English SSOT, and produce independently reviewed Korean SRT under the SSOT's content and presentation. Use for movie or episode acquisition, audit, delivery, and authorized bounded text correction.
 ---
 
-# korean-subtitles-skill
+# korean-subtitles
 
 Deliver watchable Korean under a verified English SSOT. Correct every established defect; rewrite as needed. Modification count is not a quality target. Questions/audits do not authorize placement. Use [workflow.md](references/workflow.md) for language/evidence decisions and [records.md](references/records.md) when operating the CLI.
 

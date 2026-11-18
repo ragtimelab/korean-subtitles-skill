@@ -26,7 +26,9 @@ rules = [
 email = re.compile(rb'[A-Za-z0-9_.+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}')
 private_suffix = re.compile(r'\.(?:mkv|mp4|m4v|mov|avi|ts|webm|srt|ass|vtt|sqlite3|db|jsonl|zst|zip|bundle|pem|key)$')
 private_docs = {'performance.md', 'performance-history.md', 'development.md'}
-skill_prefix = 'skills/korean-subtitles-skill/'
+skill_name = 'korean-subtitles'
+skill_prefix = f'skills/{skill_name}/'
+historical_names = {skill_name, 'korean-subtitles-skill'}
 
 
 def content(raw, name):
@@ -38,7 +40,7 @@ def content(raw, name):
         fail('Private contact: ' + name)
 
 
-def validate(files, label):
+def validate(files, label, allowed_names):
     expected = json.loads(files['public-files.json'])
     if sorted(files) != expected:
         fail('Unexpected public inventory: ' + label)
@@ -46,12 +48,19 @@ def validate(files, label):
         if private_suffix.search(name) or Path(name).name in private_docs:
             fail('Private artifact: ' + name)
         content(raw, name)
-    skill = files[skill_prefix + 'SKILL.md']
-    if not skill.startswith(b'---\nname: korean-subtitles-skill\ndescription: '):
+    entries = [name for name in expected if re.fullmatch(r'skills/[^/]+/SKILL\.md', name)]
+    if len(entries) != 1:
         fail('Invalid skill identity: ' + label)
+    entry = entries[0]
+    name = Path(entry).parent.name
+    if name not in allowed_names or not files[entry].startswith(
+        f'---\nname: {name}\ndescription: '.encode()
+    ):
+        fail('Invalid skill identity: ' + label)
+    prefix = entry.removesuffix('SKILL.md')
     manifest = json.loads(files['skill-files.json'])
-    actual = {name[len(skill_prefix):]: hashlib.sha256(raw).hexdigest()
-              for name, raw in files.items() if name.startswith(skill_prefix)}
+    actual = {name[len(prefix):]: hashlib.sha256(raw).hexdigest()
+              for name, raw in files.items() if name.startswith(prefix)}
     if actual != manifest:
         fail('Installed skill manifest mismatch: ' + label)
     for name, raw in files.items():
@@ -76,7 +85,7 @@ for name in names:
     if path.is_symlink() or not path.is_file():
         fail('Nonregular public file: ' + name)
     working[name] = path.read_bytes()
-validate(working, 'working tree')
+validate(working, 'working tree', {skill_name})
 skill_root = root / skill_prefix
 for path in skill_root.rglob('*'):
     if path.is_symlink() or not (path.is_file() or path.is_dir()):
@@ -102,7 +111,7 @@ for commit in commits:
         if oid not in blobs:
             blobs[oid] = git('cat-file', 'blob', oid.decode())
         files[name.decode()] = blobs[oid]
-    validate(files, commit[:12])
+    validate(files, commit[:12], historical_names)
 for ref in git('for-each-ref', '--format=%(objecttype) %(objectname)').decode().splitlines():
     kind, oid = ref.split()
     if kind == 'tag':

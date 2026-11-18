@@ -6,11 +6,11 @@ class PublicGate(unittest.TestCase):
     def test_clean_and_rejected_candidates(self):
         gate=Path(__file__).resolve().parents[1]/'tools/check_public.py'
         with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory);skill=root/'skills/korean-subtitles-skill';skill.mkdir(parents=True)
-            text='---\nname: korean-subtitles-skill\ndescription: Synthetic fixture\n---\n'
+            root=Path(directory);skill=root/'skills/korean-subtitles';skill.mkdir(parents=True)
+            text='---\nname: korean-subtitles\ndescription: Synthetic fixture\n---\n'
             (skill/'SKILL.md').write_text(text)
             (root/'skill-files.json').write_text(json.dumps({'SKILL.md':hashlib.sha256(text.encode()).hexdigest()}))
-            names=['public-files.json','skill-files.json','skills/korean-subtitles-skill/SKILL.md']
+            names=['public-files.json','skill-files.json','skills/korean-subtitles/SKILL.md']
             (root/'public-files.json').write_text(json.dumps(sorted(names)))
             def git(*args):return subprocess.run(['git',*args],cwd=root,check=True,capture_output=True)
             git('init');git('add','.')
@@ -26,15 +26,59 @@ class PublicGate(unittest.TestCase):
             git('add','.');git('-c','user.name=fixture','-c','user.email=fixture@users.noreply.github.com','commit','-m','remove from tip')
             self.assertNotEqual(check().returncode,0) # earlier tree is still unsafe
 
+    def test_skill_rename_preserves_history_checks(self):
+        gate = Path(__file__).resolve().parents[1] / 'tools/check_public.py'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            def git(*args):
+                subprocess.run(['git', *args], cwd=root, check=True, capture_output=True)
+
+            def write_skill(folder, name):
+                skill = root / 'skills' / folder / 'SKILL.md'
+                skill.parent.mkdir(parents=True, exist_ok=True)
+                text = f'---\nname: {name}\ndescription: Synthetic fixture\n---\n'
+                skill.write_text(text)
+                manifest = {'SKILL.md': hashlib.sha256(text.encode()).hexdigest()}
+                (root / 'skill-files.json').write_text(json.dumps(manifest))
+                files = ['public-files.json', 'skill-files.json', f'skills/{folder}/SKILL.md']
+                (root / 'public-files.json').write_text(json.dumps(sorted(files)))
+
+            def commit():
+                git('add', '-A')
+                git('-c', 'user.name=fixture', '-c',
+                    'user.email=fixture@users.noreply.github.com', 'commit', '-m', 'fixture')
+
+            def check():
+                return subprocess.run([sys.executable, str(gate), str(root)], capture_output=True)
+
+            git('init')
+            old_name, new_name = 'korean-subtitles-skill', 'korean-subtitles'
+            write_skill(old_name, old_name)
+            commit()
+            self.assertIn(b'Invalid skill identity: working tree', check().stderr)
+            (root / 'skills' / old_name).rename(root / 'skills' / new_name)
+            write_skill(new_name, new_name)
+            commit()
+            self.assertEqual(check().returncode, 0)
+            write_skill(new_name, old_name)
+            self.assertIn(b'Invalid skill identity: working tree', check().stderr)
+            commit()
+            write_skill(new_name, new_name)
+            result = check()
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(b'Invalid skill identity:', result.stderr)
+            self.assertNotIn(b'working tree', result.stderr)
+
     def test_working_content_and_historical_modes_metadata_and_artifacts(self):
         gate=Path(__file__).resolve().parents[1]/'tools/check_public.py'
         for case in ('working-contact', 'commit-contact', 'message', 'tag', 'symlink', 'submodule', 'artifact'):
             with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
-                root=Path(directory);skill=root/'skills/korean-subtitles-skill';skill.mkdir(parents=True)
-                text='---\nname: korean-subtitles-skill\ndescription: Synthetic fixture\n---\n'
+                root=Path(directory);skill=root/'skills/korean-subtitles';skill.mkdir(parents=True)
+                text='---\nname: korean-subtitles\ndescription: Synthetic fixture\n---\n'
                 (skill/'SKILL.md').write_text(text)
                 (root/'skill-files.json').write_text(json.dumps({'SKILL.md':hashlib.sha256(text.encode()).hexdigest()}))
-                names=['public-files.json','skill-files.json','skills/korean-subtitles-skill/SKILL.md']
+                names=['public-files.json','skill-files.json','skills/korean-subtitles/SKILL.md']
                 (root/'public-files.json').write_text(json.dumps(sorted(names)))
                 def git(*args):return subprocess.run(['git',*args],cwd=root,check=True,capture_output=True)
                 def commit(message='fixture', address='fixture@users.noreply.github.com'):

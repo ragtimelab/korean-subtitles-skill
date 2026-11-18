@@ -1,8 +1,8 @@
 {
   "LICENSE": "f3b18a52d2669b9a25e2bfeb5181cb26c988c7b7c01addbcaeb319a22105adab",
   "SECURITY.md": "ee75a51523cfc388f430acec83fca93bf91fe7604ae385db8331aba8fc68ecf3",
-  "SKILL.md": "4f9ab735696595bb5fe9af5ae60e701e8ce06c61c7f5ff27ad1ce2b206c86a7b",
-  "agents/openai.yaml": "975e96326076ecff1b0461fb97a1ea1b2a3100e1a878e7d41d805cabd68da876",
+  "SKILL.md": "661be44638fe98c0b3bc37a7c226a364d7207e01919ca6cf28291a1b1016a52d",
+  "agents/openai.yaml": "14626d358e148c34e55779a0405cc4e5c66704e751149b266c9fc0b21686cf02",
   "references/author.md": "2a5f4c61e2f1e28ba697696bdd1b3720cb98deb0a8dd8648ee00c61bfbe20d2b",
   "references/collection.md": "aef8adaead878792759da3bc8976532c580cc0db7315b1d09580da2d56f0f38b",
   "references/evidence.md": "2d5a23ffef2f747d0e41f3760abe83f5d8adc85bb598d00c0cccb46adca8d253",

@@ -197,7 +197,7 @@ class Telemetry(unittest.TestCase):
         result = subprocess.run(
             [
                 sys.executable,
-                str((Path(__file__).resolve().parents[1] / "skills/korean-subtitles-skill/scripts/subtitles.py")),
+                str((Path(__file__).resolve().parents[1] / "skills/korean-subtitles/scripts/subtitles.py")),
                 "telemetry",
                 "--session-log",
                 str(p),
