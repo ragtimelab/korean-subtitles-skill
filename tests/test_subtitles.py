@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-spec = importlib.util.spec_from_file_location('subtitle_engine_tests', Path(__file__).resolve().parents[1] / 'skills/korean-subtitles-skill/scripts/subtitles.py')
+spec = importlib.util.spec_from_file_location('subtitle_engine_tests', Path(__file__).resolve().parents[1] / 'skills/korean-subtitles/scripts/subtitles.py')
 w = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(w)
 PRESENTATION = {'checked': 'Synthetic original supplied text/layout inspected.', 'preserved': 'Supplied SRT layout.', 'limitations': [], 'resolved': True}
